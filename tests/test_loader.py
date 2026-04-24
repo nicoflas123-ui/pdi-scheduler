@@ -8,20 +8,14 @@ import pytest
 
 from pdi_scheduler.loader import load_activities
 
+from pdi_scheduler.loader import (
+    DATETIME_COLUMNS,
+    EXPECTED_COLUMNS,
+    load_activities,
+)
+
 # Path to the committed synthetic dataset. Tests assume it has been generated.
 SAMPLE_PATH = Path(__file__).resolve().parent.parent / "data" / "sample_pdi_export.xlsx"
-
-EXPECTED_COLUMNS = [
-    "No.", "Activity Type", "Activity Status", "VPC", "Handling Unit",
-    "Additional ID", "Creation Time", "First Assignment Time", "Start Time",
-    "Latest End", "Maximal Duration", "Approx. End", "Delay", "Delay Level",
-    "Resource", "Planned Start Time", "Planned End Time",
-]
-
-DATETIME_COLUMNS = [
-    "Creation Time", "First Assignment Time", "Start Time",
-    "Latest End", "Approx. End", "Planned Start Time", "Planned End Time",
-]
 
 
 class TestLoadActivities:
