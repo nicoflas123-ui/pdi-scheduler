@@ -9,14 +9,15 @@
 #
 # **In Google Colab:** click `Runtime → Run all`. The first cell bootstraps the package.
 #
-# **Locally:** `pip install -e ".[dev]"` from the repo root, then open this file
-# in Jupyter/VS Code — the `# %%` markers split it into cells automatically.
+# **Locally / Codespaces:** `pip install -e ".[dev]"` from the repo root, then
+# open this file in Jupyter/VS Code — the `# %%` markers split it into cells.
 
 # %% [markdown]
 # ## Colab bootstrap
 # No-op when running locally.
 
 # %%
+import os
 import sys
 
 IN_COLAB = "google.colab" in sys.modules
@@ -30,16 +31,30 @@ if IN_COLAB:
         check=False,
     )
     subprocess.run(["pip", "install", "-q", "-e", "/content/pdi-scheduler"], check=False)
+    os.chdir("/content/pdi-scheduler")
     sys.path.insert(0, "/content/pdi-scheduler/src")
 
 # %% [markdown]
 # ## Load and process the data
 # Full pipeline: load → clean → compute slack → categorise risk → classify PDI/LTSM.
+#
+# This cell changes the working directory to the repo root so relative paths
+# like `data/sample_pdi_export.xlsx` always resolve, regardless of where the
+# notebook is opened from.
 
 # %%
 from datetime import datetime
 from pathlib import Path
 
+# Walk up from wherever we are until we find the repo root (has a `data/` folder).
+p = Path.cwd().resolve()
+for _ in range(5):
+    if (p / "data" / "sample_pdi_export.xlsx").exists():
+        os.chdir(p)
+        break
+    p = p.parent
+
+from pdi_scheduler.at_risk_vehicles import build_at_risk_vehicles
 from pdi_scheduler.categories import classify_category
 from pdi_scheduler.cleaner import clean
 from pdi_scheduler.kpis import compute_kpis
@@ -48,11 +63,7 @@ from pdi_scheduler.priority_queue import build_priority_queue
 from pdi_scheduler.risk import categorise
 from pdi_scheduler.scheduling import compute_slack
 
-DATA_PATH = Path.cwd() / "data" / "sample_pdi_export.xlsx"
-if not DATA_PATH.exists():
-    # When running from the notebooks/ directory
-    DATA_PATH = Path.cwd().parent / "data" / "sample_pdi_export.xlsx"
-
+DATA_PATH = Path("data") / "sample_pdi_export.xlsx"
 NOW = datetime(2026, 4, 24, 9, 23)
 
 raw = load_activities(DATA_PATH)
@@ -128,5 +139,35 @@ def style_row(row):
 (queue.style
     .apply(style_row, axis=1)
     .format({"slack_minutes": "{:+.0f}m", "Maximal Duration": "{:.0f}m"})
+    .hide(axis="index")
+)
+
+# %% [markdown]
+# ## View 3 — At-Risk Vehicles
+# Marcus the team leader's view — one row per vehicle with a worst-risk rollup.
+# Only vehicles with at least one at-risk PDI activity appear.
+
+# %%
+vehicles = build_at_risk_vehicles(processed)
+
+VEHICLE_RISK_COLOURS = {
+    "Breached": "background-color: #fcebeb;",
+    "Critical": "background-color: #fff3f3;",
+    "At Risk":  "background-color: #fff8e1;",
+}
+
+
+def style_vehicle_row(row):
+    return [VEHICLE_RISK_COLOURS.get(row["worst_risk"], "")] * len(row)
+
+
+print(f"{len(vehicles)} vehicles flagged at risk")
+
+(vehicles.head(20).style
+    .apply(style_vehicle_row, axis=1)
+    .format({
+        "total_remaining_minutes": "{:.0f}m",
+        "earliest_deadline": "{:%d %b %H:%M}",
+    })
     .hide(axis="index")
 )
