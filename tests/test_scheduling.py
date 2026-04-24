@@ -1,7 +1,7 @@
 """Tests for pdi_scheduler.scheduling — slack-time calculation."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pandas as pd
 
