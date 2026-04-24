@@ -14,6 +14,13 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
+# Column name constants — centralised here so downstream modules and tests
+# can refer to them by name instead of magic strings.
+LATEST_END_COL = "Latest End"
+DELAY_LEVEL_COL = "Delay Level"
+IS_UNSCHEDULED_COL = "is_unscheduled"
+DEADLINE_COL = "deadline"
+
 
 def clean(
     df: pd.DataFrame,
@@ -40,13 +47,13 @@ def clean(
 
     horizon_cutoff = pd.Timestamp(today) + timedelta(days=horizon_days)
 
-    unknown = out["Delay Level"] == "unknown"
-    beyond_horizon = out["Latest End"] > horizon_cutoff
-    missing_deadline = out["Latest End"].isna()
+    unknown = out[DELAY_LEVEL_COL] == "unknown"
+    beyond_horizon = out[LATEST_END_COL] > horizon_cutoff
+    missing_deadline = out[LATEST_END_COL].isna()
 
-    out["is_unscheduled"] = (unknown | beyond_horizon | missing_deadline).astype(bool)
+    out[IS_UNSCHEDULED_COL] = (unknown | beyond_horizon | missing_deadline).astype(bool)
 
-    out["deadline"] = out["Latest End"]
-    out.loc[out["is_unscheduled"], "deadline"] = pd.NaT
+    out[DEADLINE_COL] = out[LATEST_END_COL]
+    out.loc[out[IS_UNSCHEDULED_COL], DEADLINE_COL] = pd.NaT
 
     return out
