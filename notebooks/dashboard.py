@@ -3,7 +3,8 @@
 # # PDI Scheduler Dashboard
 #
 # Workflow prioritisation dashboard for the PDI team. Shows at-risk activities,
-# the day's priority queue, at-risk vehicles, and capacity vs demand.
+# the day's priority queue, at-risk vehicles, capacity vs demand, and the
+# activity-type bottleneck.
 #
 # ## How to run
 #
@@ -37,16 +38,12 @@ if IN_COLAB:
 # %% [markdown]
 # ## Load and process the data
 # Full pipeline: load → clean → compute slack → categorise risk → classify PDI/LTSM.
-#
-# This cell changes the working directory to the repo root so relative paths
-# like `data/sample_pdi_export.xlsx` always resolve, regardless of where the
-# notebook is opened from.
 
 # %%
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-# Walk up from wherever we are until we find the repo root (has a `data/` folder).
+# Walk up until we find the repo root (has a `data/` folder).
 p = Path.cwd().resolve()
 for _ in range(5):
     if (p / "data" / "sample_pdi_export.xlsx").exists():
@@ -55,6 +52,7 @@ for _ in range(5):
     p = p.parent
 
 from pdi_scheduler.at_risk_vehicles import build_at_risk_vehicles
+from pdi_scheduler.capacity import daily_load
 from pdi_scheduler.categories import classify_category
 from pdi_scheduler.cleaner import clean
 from pdi_scheduler.kpis import compute_kpis
@@ -79,7 +77,6 @@ print(
 
 # %% [markdown]
 # ## View 1 — KPI Strip
-# Headline numbers for all three user types (scheduler, team leader, ops manager).
 
 # %%
 from IPython.display import HTML
@@ -115,8 +112,6 @@ HTML(html)
 
 # %% [markdown]
 # ## View 2 — Priority Queue
-# Top 20 activities sorted by slack (most urgent first). Non-PDI rows are muted
-# because the PDI team can't act on them directly.
 
 # %%
 queue = build_priority_queue(processed, top_n=20)
@@ -144,8 +139,6 @@ def style_row(row):
 
 # %% [markdown]
 # ## View 3 — At-Risk Vehicles
-# Marcus the team leader's view — one row per vehicle with a worst-risk rollup.
-# Only vehicles with at least one at-risk PDI activity appear.
 
 # %%
 vehicles = build_at_risk_vehicles(processed)
@@ -171,3 +164,102 @@ print(f"{len(vehicles)} vehicles flagged at risk")
     })
     .hide(axis="index")
 )
+
+# %% [markdown]
+# ## View 4 — Capacity vs Demand (next 14 days)
+# Priya the ops manager's forward-looking view. Blue bars = planned work minutes,
+# dashed line = capacity. Bars crossing the line highlight overloaded days.
+
+# %%
+import plotly.graph_objects as go
+
+load_df = daily_load(
+    processed,
+    start_date=NOW.date(),
+    days=14,
+    hours_per_resource_per_day=7.5,
+)
+
+capacity_line = load_df["capacity_minutes"].iloc[0] if len(load_df) else 0
+bar_colours = [
+    "#e24b4a" if planned > capacity_line else "#378add"
+    for planned in load_df["planned_minutes"]
+]
+
+fig_capacity = go.Figure()
+fig_capacity.add_trace(go.Bar(
+    x=load_df["date"],
+    y=load_df["planned_minutes"],
+    marker_color=bar_colours,
+    name="Planned minutes",
+    hovertemplate="<b>%{x|%a %d %b}</b><br>Planned: %{y:,.0f}m<extra></extra>",
+))
+fig_capacity.add_hline(
+    y=capacity_line,
+    line=dict(color="black", width=1.5, dash="dash"),
+    annotation_text=f"Capacity ({capacity_line:,.0f}m)",
+    annotation_position="top right",
+)
+fig_capacity.update_layout(
+    title="Capacity vs demand — next 14 days",
+    xaxis_title="Deadline date",
+    yaxis_title="Minutes",
+    height=380,
+    margin=dict(l=40, r=40, t=60, b=40),
+    showlegend=False,
+    plot_bgcolor="white",
+)
+fig_capacity.update_xaxes(showgrid=False)
+fig_capacity.update_yaxes(gridcolor="#eee")
+fig_capacity.show()
+
+# %% [markdown]
+# ## View 5 — Activity-Type Bottleneck
+# Which PDI activity types are driving the backlog? Horizontal bars segmented
+# by risk band, sorted by total at-risk minutes.
+
+# %%
+pdi_at_risk = processed.loc[
+    (processed["category"] == "PDI")
+    & (~processed["is_unscheduled"])
+    & (processed["risk_band"].isin(["Breached", "Critical", "At Risk"]))
+].copy()
+
+# Cap unrealistic durations (placeholder 1199m ROADTEST values in real data).
+pdi_at_risk["_capped_duration"] = pdi_at_risk["Maximal Duration"].clip(upper=480)
+
+agg = (pdi_at_risk
+    .groupby(["Activity Type", "risk_band"], as_index=False)
+    .agg(minutes=("_capped_duration", "sum"), jobs=("_capped_duration", "size"))
+)
+
+totals = agg.groupby("Activity Type", as_index=False)["minutes"].sum()
+top10 = totals.sort_values("minutes", ascending=False).head(10)["Activity Type"]
+agg = agg.loc[agg["Activity Type"].isin(top10)]
+
+BAND_COLOURS = {"Breached": "#e24b4a", "Critical": "#a32d2d", "At Risk": "#ef9f27"}
+
+fig_bottleneck = go.Figure()
+for band in ["Breached", "Critical", "At Risk"]:
+    sub = agg.loc[agg["risk_band"] == band]
+    fig_bottleneck.add_trace(go.Bar(
+        y=sub["Activity Type"],
+        x=sub["minutes"],
+        name=band,
+        orientation="h",
+        marker_color=BAND_COLOURS[band],
+        hovertemplate="<b>%{y}</b><br>" + band + ": %{x:,.0f}m<extra></extra>",
+    ))
+
+fig_bottleneck.update_layout(
+    title="Activity-type bottleneck — top 10 PDI types by at-risk minutes",
+    barmode="stack",
+    xaxis_title="At-risk minutes (durations capped at 480m)",
+    yaxis=dict(categoryorder="total ascending"),
+    height=460,
+    margin=dict(l=160, r=40, t=60, b=40),
+    plot_bgcolor="white",
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+)
+fig_bottleneck.update_xaxes(gridcolor="#eee")
+fig_bottleneck.show()
