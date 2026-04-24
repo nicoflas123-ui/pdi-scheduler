@@ -154,10 +154,7 @@ def main() -> None:
     for v in range(n_vehicles):
         vin = generate_vin(v)
         additional_id = 559_000_000 + v
-        if random.random() < 0.05:
-            n_acts = random.randint(80, 120)
-        else:
-            n_acts = random.randint(8, 20)
+        n_acts = random.randint(80, 120) if random.random() < 0.05 else random.randint(8, 20)
         all_rows.extend(generate_vehicle_activities(vin, additional_id, n_acts))
 
     start_id = 15_600_000

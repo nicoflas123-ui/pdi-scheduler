@@ -6,8 +6,6 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pdi_scheduler.loader import load_activities
-
 from pdi_scheduler.loader import (
     DATETIME_COLUMNS,
     EXPECTED_COLUMNS,
