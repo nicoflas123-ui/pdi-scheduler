@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 # %% [markdown]
 # # PDI Scheduler Dashboard
 #
@@ -60,7 +61,10 @@ with_slack = compute_slack(cleaned, now=NOW)
 with_risk = categorise(with_slack, now=NOW)
 processed = classify_category(with_risk)
 
-print(f"Loaded {len(processed):,} activities across {processed['Handling Unit'].nunique()} vehicles")
+print(
+    f"Loaded {len(processed):,} activities "
+    f"across {processed['Handling Unit'].nunique()} vehicles"
+)
 
 # %% [markdown]
 # ## View 1 — KPI Strip
