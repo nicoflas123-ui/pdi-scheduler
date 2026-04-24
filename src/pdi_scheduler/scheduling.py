@@ -22,6 +22,14 @@ IS_UNSCHEDULED_COL = "is_unscheduled"
 SLACK_COL = "slack_minutes"
 
 
+def _minutes_between(end: pd.Series, start: pd.Timestamp) -> pd.Series:
+    """Return the time gap between ``end`` and ``start`` in minutes.
+
+    NaT values in ``end`` propagate as NaN in the output.
+    """
+    return (end - start).dt.total_seconds() / 60
+
+
 def compute_slack(df: pd.DataFrame, now: datetime) -> pd.DataFrame:
     """Return a copy of ``df`` with a ``slack_minutes`` column added.
 
@@ -36,7 +44,7 @@ def compute_slack(df: pd.DataFrame, now: datetime) -> pd.DataFrame:
     """
     out = df.copy()
 
-    time_to_deadline = (out[DEADLINE_COL] - pd.Timestamp(now)).dt.total_seconds() / 60
+    time_to_deadline = _minutes_between(out[DEADLINE_COL], pd.Timestamp(now))
     slack = time_to_deadline - out[DURATION_COL]
 
     # Rows where slack is undefined -> NaN
